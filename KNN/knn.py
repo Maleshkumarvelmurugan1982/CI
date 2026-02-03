@@ -1,6 +1,7 @@
 # -------------------------------------------------
 # k-NN Classifier (2 Features, Random Training Data)
 # Displays CSV + Entity Count + Rank + Steps
+# Prints Min & Max used in Normalization
 # No external libraries
 # -------------------------------------------------
 
@@ -14,7 +15,6 @@ def load_csv(file_path):
     for line in lines:
         print(line.strip())
 
-    # ENTITY COUNT (excluding header)
     total_entities = len(lines) - 1
     print("\n>>> Total number of entities (rows in file):", total_entities)
 
@@ -30,7 +30,7 @@ def load_csv(file_path):
     return data, header
 
 
-# -------- Random Selection (no random import) --------
+# -------- Random Selection --------
 def random_selection(data, count):
     selected = []
     used = []
@@ -89,7 +89,6 @@ def knn_classifier(train, query, k, metric):
         distances.append((d, point[1]))
         print(f"Point {i+1}: Distance = {d:.4f}, Class = {point[1]}")
 
-    # Sort distances
     for i in range(len(distances)):
         for j in range(i + 1, len(distances)):
             if distances[i][0] > distances[j][0]:
@@ -133,7 +132,12 @@ print("\n--- Randomly Selected Training Data ---")
 for i, t in enumerate(training, start=1):
     print(f"Point {i}: {t}")
 
+# -------- NORMALIZATION --------
 training, mins, maxs = normalize(training)
+
+print("\n--- Normalization Details ---")
+print(f"Min values used: {header[f1]} = {mins[0]}, {header[f2]} = {mins[1]}")
+print(f"Max values used: {header[f1]} = {maxs[0]}, {header[f2]} = {maxs[1]}")
 
 k = int(input("\nEnter value of k: "))
 metric = input("Enter distance metric (euclidean/manhattan): ")
