@@ -2,6 +2,7 @@
 # k-NN Classifier (2 Features, Random Training Data)
 # Displays CSV + Entity Count + Rank + Steps
 # Prints Min & Max used in Normalization
+# Prints Normalized Training Data
 # No external libraries
 # -------------------------------------------------
 
@@ -61,7 +62,8 @@ def normalize(data):
     for d in data:
         norm_feat = []
         for i in range(2):
-            norm_feat.append((d[0][i] - mins[i]) / (maxs[i] - mins[i]))
+            norm_value = (d[0][i] - mins[i]) / (maxs[i] - mins[i])
+            norm_feat.append(norm_value)
         norm_data.append((norm_feat, d[1]))
 
     return norm_data, mins, maxs
@@ -128,9 +130,9 @@ filtered = [([d[0][f1], d[0][f2]], d[1]) for d in dataset]
 train_count = int(input("\nEnter number of training data points (e.g., 15): "))
 training = random_selection(filtered, train_count)
 
-print("\n--- Randomly Selected Training Data ---")
+print("\n--- Randomly Selected Training Data (Original) ---")
 for i, t in enumerate(training, start=1):
-    print(f"Point {i}: {t}")
+    print(f"Point {i}: Features = {t[0]}, Class = {t[1]}")
 
 # -------- NORMALIZATION --------
 training, mins, maxs = normalize(training)
@@ -138,6 +140,10 @@ training, mins, maxs = normalize(training)
 print("\n--- Normalization Details ---")
 print(f"Min values used: {header[f1]} = {mins[0]}, {header[f2]} = {mins[1]}")
 print(f"Max values used: {header[f1]} = {maxs[0]}, {header[f2]} = {maxs[1]}")
+
+print("\n--- Normalized Training Data ---")
+for i, t in enumerate(training, start=1):
+    print(f"Point {i}: Normalized Features = {t[0]}, Class = {t[1]}")
 
 k = int(input("\nEnter value of k: "))
 metric = input("Enter distance metric (euclidean/manhattan): ")
