@@ -1,10 +1,14 @@
-# -------------------------------------------------
-# k-NN Classifier (2 Features, Random Training Data)
+# k-NN Classifier (n Features, Random Training Data)
 # Displays CSV + Entity Count + Rank + Steps
-# Prints Min & Max used in Normalization
-# Prints Normalized Training Data
+# Prints Min & Max used in Normalization (4-decimal)
+# Prints Original and Normalized Training Data in a table (4-decimal precision)
+# For each unknown data point prints a table:
+#   Original | Normalized | Pred(k1) | Pred(k2) | ...
+# Supports weighted and unweighted voting
 # No external libraries
-# -------------------------------------------------
+# File path set to: C:\Users\males\Downloads\diabetes.csv
+
+import copy
 
 # -------- Load CSV --------
 def load_csv(file_path):
@@ -46,13 +50,17 @@ def random_selection(data, count):
     return selected
 
 
-# -------- Min-Max Normalization --------
+# -------- Min-Max Normalization (n features) --------
 def normalize(data):
-    mins = [data[0][0][0], data[0][0][1]]
-    maxs = [data[0][0][0], data[0][0][1]]
+    if not data:
+        return [], [], []
+
+    n_features = len(data[0][0])
+    mins = [data[0][0][i] for i in range(n_features)]
+    maxs = [data[0][0][i] for i in range(n_features)]
 
     for d in data:
-        for i in range(2):
+        for i in range(n_features):
             if d[0][i] < mins[i]:
                 mins[i] = d[0][i]
             if d[0][i] > maxs[i]:
@@ -61,8 +69,12 @@ def normalize(data):
     norm_data = []
     for d in data:
         norm_feat = []
-        for i in range(2):
-            norm_value = (d[0][i] - mins[i]) / (maxs[i] - mins[i])
+        for i in range(n_features):
+            denom = (maxs[i] - mins[i])
+            if denom == 0:
+                norm_value = 0.0
+            else:
+                norm_value = (d[0][i] - mins[i]) / denom
             norm_feat.append(norm_value)
         norm_data.append((norm_feat, d[1]))
 
@@ -70,95 +82,211 @@ def normalize(data):
 
 
 def normalize_query(q, mins, maxs):
-    return [(q[i] - mins[i]) / (maxs[i] - mins[i]) for i in range(2)]
+    norm = []
+    for i in range(len(q)):
+        denom = (maxs[i] - mins[i])
+        if denom == 0:
+            norm.append(0.0)
+        else:
+            norm.append((q[i] - mins[i]) / denom)
+    return norm
 
 
-# -------- Distance Metrics --------
+# -------- Distance Metrics (n features) --------
 def distance_metrics(p1, p2, metric):
     if metric == "euclidean":
-        return ((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2) ** 0.5
+        s = 0.0
+        for i in range(len(p1)):
+            s += (p1[i] - p2[i]) ** 2
+        return s ** 0.5
     elif metric == "manhattan":
-        return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
+        s = 0.0
+        for i in range(len(p1)):
+            s += abs(p1[i] - p2[i])
+        return s
+    else:
+        raise ValueError("Unsupported metric: choose 'euclidean' or 'manhattan'")
 
 
-# -------- k-NN with Rank Display --------
-def knn_classifier(train, query, k, metric):
+# -------- k-NN with Rank Display (supports weighted/unweighted) --------
+def knn_classifier(train, query, k, metric, weighted=False):
     distances = []
 
-    print("\n--- Distance Calculation ---")
     for i, point in enumerate(train):
         d = distance_metrics(point[0], query, metric)
-        distances.append((d, point[1]))
-        print(f"Point {i+1}: Distance = {d:.4f}, Class = {point[1]}")
+        distances.append((d, point[1], point[0], i))  # distance, label, features, original index
 
-    for i in range(len(distances)):
-        for j in range(i + 1, len(distances)):
-            if distances[i][0] > distances[j][0]:
-                distances[i], distances[j] = distances[j], distances[i]
+    # sort by distance ascending
+    distances.sort(key=lambda x: x[0])
 
-    print("\n--- Ranked Distances ---")
-    for rank, d in enumerate(distances, start=1):
-        print(f"Rank {rank}: Distance = {d[0]:.4f}, Class = {d[1]}")
+    # If exact match, return immediately
+    if distances and distances[0][0] == 0.0:
+        return distances[0][1]
 
-    print(f"\n--- {k} Nearest Neighbors ---")
     votes = {}
-    for i in range(k):
-        label = distances[i][1]
-        votes[label] = votes.get(label, 0) + 1
-        print(f"Neighbor {i+1} (Rank {i+1}): Class = {label}")
+    eps = 1e-12
 
-    print("\n--- Voting ---")
-    for cls in votes:
-        print(f"Class {cls}: {votes[cls]} votes")
+    for i in range(min(k, len(distances))):
+        d, label, feats, orig_idx = distances[i]
+        if weighted:
+            weight = 1.0 / (d + eps)
+        else:
+            weight = 1.0
+        votes[label] = votes.get(label, 0.0) + weight
 
-    return max(votes, key=votes.get)
+    # determine winner (tie-breaker: smallest average distance among tied)
+    max_vote = max(votes.values())
+    tied = [cls for cls, v in votes.items() if abs(v - max_vote) < 1e-12]
+
+    if len(tied) == 1:
+        return tied[0]
+
+    # tie-breaker
+    avg_dist = {}
+    for cls in tied:
+        ds = [distances[i][0] for i in range(min(k, len(distances))) if distances[i][1] == cls]
+        avg_dist[cls] = sum(ds) / len(ds) if ds else float('inf')
+
+    winner = min(avg_dist.items(), key=lambda x: x[1])[0]
+    return winner
+
+
+# -------- Utility: format feature lists to 4-decimal strings --------
+def fmt_features(vals, precision=4):
+    return "[" + ", ".join(f"{v:.{precision}f}" for v in vals) + "]"
 
 
 # -------- Main Program --------
-file_path = "/home/sivajothi/Downloads/diabetes.csv"
-dataset, header = load_csv(file_path)
+if __name__ == "__main__":
+    # Use the requested file path
+    file_path = r"C:\Users\males\Downloads\diabetes.csv"
+    dataset, header = load_csv(file_path)
 
-print("\nAvailable Features:")
-for i in range(len(header) - 1):
-    print(f"{i} -> {header[i]}")
+    print("\nAvailable Features:")
+    for i in range(len(header) - 1):
+        print(f"{i} -> {header[i]}")
 
-f1 = int(input("\nSelect first feature index: "))
-f2 = int(input("Select second feature index: "))
+    # Ask user to input feature indices (allow n features)
+    features_input = input(
+        "\nSelect feature indices (comma-separated) or enter count then indices (e.g., '0,2,4'): "
+    ).strip()
 
-filtered = [([d[0][f1], d[0][f2]], d[1]) for d in dataset]
+    # parse feature indices
+    if "," in features_input:
+        try:
+            selected_indices = [int(x.strip()) for x in features_input.split(",") if x.strip() != ""]
+        except ValueError:
+            raise ValueError("Invalid feature indices input.")
+    else:
+        try:
+            single = int(features_input)
+            more = input(f"You entered '{single}'. Enter 'c' to treat as count of features, or 'i' to treat as a single index: ").strip().lower()
+            if more == 'c':
+                count = single
+                idxs = input(f"Enter {count} feature indices separated by commas: ")
+                selected_indices = [int(x.strip()) for x in idxs.split(",") if x.strip() != ""]
+                if len(selected_indices) != count:
+                    raise ValueError("Number of indices provided does not match the count.")
+            else:
+                selected_indices = [single]
+        except ValueError:
+            raise ValueError("Invalid input for features.")
 
-train_count = int(input("\nEnter number of training data points (e.g., 15): "))
-training = random_selection(filtered, train_count)
+    print(f"\nSelected feature indices: {selected_indices}")
+    print("Selected feature names:", [header[i] for i in selected_indices])
 
-print("\n--- Randomly Selected Training Data (Original) ---")
-for i, t in enumerate(training, start=1):
-    print(f"Point {i}: Features = {t[0]}, Class = {t[1]}")
+    # filter dataset to selected features
+    filtered = [([d[0][i] for i in selected_indices], d[1]) for d in dataset]
 
-# -------- NORMALIZATION --------
-training, mins, maxs = normalize(training)
+    train_count = int(input("\nEnter number of training data points (e.g., 15): "))
+    training = random_selection(filtered, train_count)
 
-print("\n--- Normalization Details ---")
-print(f"Min values used: {header[f1]} = {mins[0]}, {header[f2]} = {mins[1]}")
-print(f"Max values used: {header[f1]} = {maxs[0]}, {header[f2]} = {maxs[1]}")
+    # keep a copy of original (pre-normalized) selected training data for table
+    original_training = [(list(t[0]), t[1]) for t in training]
 
-print("\n--- Normalized Training Data ---")
-for i, t in enumerate(training, start=1):
-    print(f"Point {i}: Normalized Features = {t[0]}, Class = {t[1]}")
+    print("\n--- Randomly Selected Training Data (Original) ---")
+    for i, t in enumerate(original_training, start=1):
+        print(f"Point {i}: Features = {t[0]}, Class = {t[1]}")
 
-k = int(input("\nEnter value of k: "))
-metric = input("Enter distance metric (euclidean/manhattan): ")
+    # -------- NORMALIZATION --------
+    normalized_training, mins, maxs = normalize(training)
 
-unknown_count = int(input("\nEnter number of unknown data points: "))
+    # Print normalization details with 4-decimal precision
+    print("\n--- Normalization Details ---")
+    for idx, feature_idx in enumerate(selected_indices):
+        print(f"Feature {idx} -> {header[feature_idx]}: Min = {mins[idx]:.4f}, Max = {maxs[idx]:.4f}")
 
-for u in range(unknown_count):
-    print(f"\nEnter unknown data point {u+1}:")
-    q1 = float(input(header[f1] + ": "))
-    q2 = float(input(header[f2] + ": "))
+    # Print table: Index | Original | Normalized | Class
+    print("\n--- Training Data: Original vs Normalized (4-decimal) ---")
+    col1_w = 6
+    col2_w = max(20, 10 * len(selected_indices))
+    col3_w = col2_w
+    col4_w = 8
+    header_row = f"{'Idx':<{col1_w}} | {'Original':<{col2_w}} | {'Normalized':<{col3_w}} | {'Class':<{col4_w}}"
+    print(header_row)
+    print("-" * len(header_row))
+    for i, (orig, cls) in enumerate(original_training, start=1):
+        norm = normalized_training[i-1][0]
+        orig_str = fmt_features(orig, precision=4)
+        norm_str = fmt_features(norm, precision=4)
+        print(f"{i:<{col1_w}} | {orig_str:<{col2_w}} | {norm_str:<{col3_w}} | {cls:<{col4_w}}")
 
-    query = normalize_query([q1, q2], mins, maxs)
+    # Ask for metric and weighting once
+    metric = input("\nEnter distance metric (euclidean/manhattan): ").strip().lower()
+    weighted_input = input("Use weighted voting? (y/n): ").strip().lower()
+    weighted = weighted_input in ("y", "yes", "1", "true")
 
-    result = knn_classifier(training, query, k, metric)
+    # Ask for k values (comma-separated)
+    k_input = input("Enter k values (comma-separated, e.g., 3,5,7): ").strip()
+    try:
+        k_values = [int(x.strip()) for x in k_input.split(",") if x.strip() != ""]
+        if not k_values:
+            raise ValueError
+    except ValueError:
+        raise ValueError("Invalid k values input.")
 
-    print("\n--- Final Prediction ---")
-    print("Predicted Class:", result)
-    print("→ Diabetic" if result == 1 else "→ Not Diabetic")
+    unknown_count = int(input("\nEnter number of unknown data points: "))
+
+    for u in range(unknown_count):
+        print(f"\nEnter unknown data point {u+1}:")
+        q = []
+        for idx, feature_idx in enumerate(selected_indices):
+            val = float(input(f"{header[feature_idx]}: "))
+            q.append(val)
+
+        query_norm = normalize_query(q, mins, maxs)
+
+        # compute predictions for each k
+        preds = []
+        for k in k_values:
+            pred = knn_classifier(normalized_training, query_norm, k, metric, weighted)
+            preds.append(pred)
+
+        # Print table for this unknown: Original | Normalized | Pred(k1) | Pred(k2) | ...
+        print("\n--- Prediction Table ---")
+        # construct header dynamically
+        orig_col = "Original"
+        norm_col = "Normalized"
+        k_cols = [f"Pred(k={k})" for k in k_values]
+        # widths
+        col1_w = max(12, 10 * len(selected_indices))
+        col2_w = col1_w
+        k_w = 14
+        header_row = f"{orig_col:<{col1_w}} | {norm_col:<{col2_w}}"
+        for kc in k_cols:
+            header_row += f" | {kc:<{k_w}}"
+        print(header_row)
+        print("-" * len(header_row))
+
+        orig_str = fmt_features(q, precision=4)
+        norm_str = fmt_features(query_norm, precision=4)
+        row = f"{orig_str:<{col1_w}} | {norm_str:<{col2_w}}"
+        for pred in preds:
+            label_text = f"{pred} ({'Diabetic' if pred == 1 else 'Not Diabetic'})"
+            row += f" | {label_text:<{k_w}}"
+        print(row)
+
+        # also print a small summary
+        print("\nSummary:")
+        for k, pred in zip(k_values, preds):
+            print(f"  k={k} -> Predicted Class: {pred} ({'Diabetic' if pred == 1 else 'Not Diabetic'})")
