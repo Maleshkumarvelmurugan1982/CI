@@ -1,4 +1,4 @@
-sivajothi@sivajothi-HP-Laptop-15s-fq5xxx:~/Desktop$ cat 1.py
+
 # Default joint probability table
 default_table = {
     ("b","e","a"): 0.01,
